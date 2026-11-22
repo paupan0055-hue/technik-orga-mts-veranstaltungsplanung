@@ -1,0 +1,1700 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schul- & Veranstaltungsplaner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .fade-in { animation: fadeIn 0.25s ease-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- LIVE-UPDATE BANNER (Wird durch Admin/Administrator auf allen Geräten ausgespielt) -->
+    <div id="liveUpdateBanner" class="hidden bg-gradient-to-r from-indigo-600 via-blue-600 to-sky-600 text-white px-4 py-2.5 shadow-md transition-all">
+        <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-sm">
+            <div class="flex items-center gap-2 text-center sm:text-left">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-white/20 uppercase tracking-wider" id="bannerVersionBadge">Update</span>
+                <span id="bannerMessageText" class="font-medium">Neue Aktualisierung verfügbar.</span>
+            </div>
+            <button type="button" onclick="dismissUpdateBanner()" class="text-white/80 hover:text-white text-xs underline shrink-0 cursor-pointer">
+                Ausblenden
+            </button>
+        </div>
+    </div>
+
+    <!-- TOAST-BENACHRICHTIGUNG (Ersatz für alert()) -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+    <!-- HEADER & NAVIGATION -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
+            <!-- Logo & App-Titel -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm">
+                    <i data-lucide="calendar-days" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h1 id="headerAppTitle" class="text-lg sm:text-xl font-bold text-slate-900 leading-tight">Schul- & Veranstaltungsplaner</h1>
+                    <div class="flex items-center gap-2 text-xs text-slate-500">
+                        <span id="syncIndicator" class="inline-flex items-center gap-1 text-emerald-600 font-medium">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Cloud-Sync verbindet...
+                        </span>
+                        <button type="button" onclick="forceCloudSyncNow()" class="text-[11px] text-blue-600 hover:underline font-medium cursor-pointer" title="Sofort mit anderen Geräten abgleichen">
+                            ↻ Sync
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Aktueller Account & Login/Logout -->
+            <div class="flex items-center gap-2.5">
+                <div id="roleBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
+                    <span id="roleBadgeText">Lehrer</span>
+                </div>
+
+                <button type="button" id="openLoginBtn" onclick="openLoginModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold px-4 py-2 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+                    <i data-lucide="log-in" class="w-4 h-4"></i>
+                    <span>Anmelden</span>
+                </button>
+
+                <button type="button" id="logoutBtn" onclick="logoutUser()" class="hidden bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs sm:text-sm font-semibold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer" title="Zurück zum Lehrer-Account wechseln">
+                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Abmelden</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- TAB-NAVIGATION -->
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 border-t border-slate-100 flex overflow-x-auto gap-1 sm:gap-2">
+            <button type="button" onclick="switchTab('events')" id="tab-events" class="tab-btn active px-4 py-3 text-sm font-semibold border-b-2 border-blue-600 text-blue-600 flex items-center gap-2 whitespace-nowrap cursor-pointer">
+                <i data-lucide="calendar" class="w-4 h-4"></i>
+                Veranstaltungen
+            </button>
+            <button type="button" onclick="switchTab('docs')" id="tab-docs" class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-slate-900 flex items-center gap-2 whitespace-nowrap cursor-pointer">
+                <i data-lucide="file-text" class="w-4 h-4"></i>
+                Hinweise & Dokumente
+            </button>
+            <button type="button" onclick="switchTab('notifications')" id="tab-notifications" class="tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-slate-900 flex items-center gap-2 whitespace-nowrap cursor-pointer">
+                <i data-lucide="bell" class="w-4 h-4"></i>
+                E-Mail-Benachrichtigungen
+            </button>
+            <button type="button" onclick="switchTab('admin')" id="tab-admin" class="hidden tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-slate-900 flex items-center gap-2 whitespace-nowrap cursor-pointer">
+                <i data-lucide="shield-check" class="w-4 h-4 text-amber-600"></i>
+                Verwaltung & Updates
+            </button>
+        </div>
+    </header>
+
+    <!-- HAUPTBEREICH -->
+    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+        <!-- ========================================================= -->
+        <!-- TAB 1: VERANSTALTUNGEN                                    -->
+        <!-- ========================================================= -->
+        <section id="view-events" class="fade-in space-y-6">
+            <!-- Neue Veranstaltung eintragen (Für alle Accounts sichtbar) -->
+            <div id="addEventCard" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                            <i data-lucide="calendar-plus" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-base sm:text-lg font-bold text-slate-900">Neue Veranstaltung eintragen</h2>
+                            <p class="text-xs text-slate-500">Wird sofort auf allen Geräten synchronisiert.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <form id="eventForm" onsubmit="handleCreateEvent(event)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Titel der Veranstaltung *</label>
+                        <input type="text" id="evTitle" required placeholder="z. B. Sommerkonzert, Elternabend..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Datum *</label>
+                        <input type="date" id="evDate" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Uhrzeit *</label>
+                        <input type="time" id="evTime" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Ort / Raum</label>
+                        <input type="text" id="evLocation" placeholder="z. B. Aula, Sporthalle" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Technik-Bedarf / Beschreibung</label>
+                        <input type="text" id="evDesc" placeholder="z. B. 2 Funkmikrofone, Beamer, Lichtanlage..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                    </div>
+                    <div class="flex items-end">
+                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-2.5 px-4 rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer">
+                            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                            Eintragen
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Liste aller Veranstaltungen -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-900">Aktuelle Veranstaltungen</h2>
+                        <p class="text-xs text-slate-500">Alle eingetragenen Termine im Überblick.</p>
+                    </div>
+                    <div class="relative w-full sm:w-64">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input type="text" id="eventSearchInput" oninput="renderEvents()" placeholder="Termin suchen..." class="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                </div>
+
+                <div id="eventsListContainer" class="space-y-3">
+                    <!-- Wird dynamisch befüllt -->
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================================= -->
+        <!-- TAB 2: HINWEISE & DOKUMENTE                               -->
+        <!-- ========================================================= -->
+        <section id="view-docs" class="hidden fade-in space-y-6">
+            <div id="docsProtectedContent" class="space-y-6">
+                <!-- Kopfbereich & Button für neues Dokument (alle außer Lehrer) -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900">Hinweise, Checklisten & Dokumente</h2>
+                        <p class="text-sm text-slate-500">Wichtige Informationen, Aufbaupläne und Anleitungen für Veranstaltungen.</p>
+                    </div>
+                    <button type="button" id="toggleAddDocBtn" onclick="toggleDocForm()" class="hidden bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-2 cursor-pointer self-start">
+                        <i data-lucide="file-plus" class="w-4 h-4"></i>
+                        Neues Dokument anlegen
+                    </button>
+                </div>
+
+                <!-- Formular: Neues Dokument anlegen (Technik AG, Administrator & Admin) -->
+                <div id="addDocCard" class="hidden bg-white rounded-2xl border border-blue-200 shadow-sm p-5 sm:p-6">
+                    <h3 class="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
+                        <i data-lucide="file-edit" class="w-4 h-4 text-blue-600"></i>
+                        Neues Dokument / Hinweis erstellen
+                    </h3>
+                    <form onsubmit="handleCreateDoc(event)" class="space-y-3.5">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                            <div class="sm:col-span-2">
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">Titel des Dokuments *</label>
+                                <input type="text" id="docTitle" required placeholder="z. B. Tonanlage Aula – Bedienungsanleitung" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">Kategorie</label>
+                                <select id="docCategory" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                                    <option value="Technik-Guide">Technik-Guide</option>
+                                    <option value="Checkliste">Checkliste</option>
+                                    <option value="Sicherheit">Sicherheit & Brandschutz</option>
+                                    <option value="Allgemeiner Hinweis">Allgemeiner Hinweis</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Inhalt / Beschreibung *</label>
+                            <textarea id="docContent" rows="4" required placeholder="Hier den vollständigen Text, Hinweise oder Schritte eintragen..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+                        </div>
+                        <div class="flex justify-end gap-2">
+                            <button type="button" onclick="toggleDocForm()" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-600 text-sm font-medium hover:bg-slate-50 cursor-pointer">Abbrechen</button>
+                            <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-xs cursor-pointer">Dokument speichern</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Dokumente-Raster -->
+                <div id="docsListContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Wird dynamisch befüllt -->
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================================= -->
+        <!-- TAB 3: E-MAIL-BENACHRICHTIGUNGEN                          -->
+        <!-- ========================================================= -->
+        <section id="view-notifications" class="hidden fade-in space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Abo-Formular -->
+                <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                            <i data-lucide="mail-check" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-lg font-bold text-slate-900">E-Mail-Benachrichtigungen verwalten</h2>
+                            <p class="text-xs text-slate-500">Erhalte automatische Infos bei neuen Veranstaltungen, Dokumenten oder App-Updates.</p>
+                        </div>
+                    </div>
+
+                    <form onsubmit="handleSaveEmailSub(event)" class="space-y-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">Dein Name (optional)</label>
+                                <input type="text" id="subName" placeholder="Max Mustermann" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">E-Mail-Adresse *</label>
+                                <input type="email" id="subEmail" required placeholder="name@schule.de" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+                            <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Benachrichtigungs-Optionen</p>
+                            <label class="flex items-center justify-between cursor-pointer">
+                                <span class="text-sm font-medium text-slate-800">Neue Veranstaltungen & Terminänderungen</span>
+                                <input type="checkbox" id="subOptEvents" checked class="w-4 h-4 accent-indigo-600 rounded">
+                            </label>
+                            <label class="flex items-center justify-between cursor-pointer">
+                                <span class="text-sm font-medium text-slate-800">Neue Technik-Hinweise & Dokumente</span>
+                                <input type="checkbox" id="subOptDocs" checked class="w-4 h-4 accent-indigo-600 rounded">
+                            </label>
+                            <label class="flex items-center justify-between cursor-pointer">
+                                <span class="text-sm font-medium text-slate-800">Wichtige App-Updates & Systemhinweise</span>
+                                <input type="checkbox" id="subOptUpdates" checked class="w-4 h-4 accent-indigo-600 rounded">
+                            </label>
+                        </div>
+
+                        <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+                            <label class="flex items-center gap-2.5 cursor-pointer">
+                                <input type="checkbox" id="subActiveToggle" checked class="w-5 h-5 accent-emerald-600 rounded">
+                                <span class="text-sm font-semibold text-slate-800">E-Mail-Benachrichtigungen für diese Adresse aktivieren</span>
+                            </label>
+                            <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-5 py-2.5 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer">
+                                <i data-lucide="save" class="w-4 h-4"></i>
+                                Einstellungen speichern
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Status & Verteiler-Info -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col justify-between space-y-4">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900 mb-2 flex items-center gap-2">
+                            <i data-lucide="radio" class="w-4 h-4 text-emerald-600"></i>
+                            Benachrichtigungs-Status
+                        </h3>
+                        <p class="text-xs text-slate-500 mb-4">Aktive Empfänger im Cloud-Verteiler werden bei Änderungen automatisch berücksichtigt.</p>
+
+                        <div class="p-4 rounded-xl bg-emerald-50 border border-emerald-200 mb-4">
+                            <div class="text-2xl font-extrabold text-emerald-800" id="activeSubscribersCount">0</div>
+                            <div class="text-xs font-medium text-emerald-700">Aktive E-Mail-Abonnenten</div>
+                        </div>
+
+                        <div id="subscribersAdminList" class="hidden space-y-2 max-h-48 overflow-y-auto pr-1">
+                            <!-- Sichtbar für Admin/Administrator -->
+                        </div>
+                    </div>
+
+                    <div id="notificationLogBox" class="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs text-slate-600">
+                        <span class="font-semibold text-slate-800 block mb-1">Letzte System-Aktivität:</span>
+                        <span id="lastNotificationLog">Bereit zum Versand von Benachrichtigungen.</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================================= -->
+        <!-- TAB 4: VERWALTUNG & UPDATES (ADMIN & ADMINISTRATOR)       -->
+        <!-- ========================================================= -->
+        <section id="view-admin" class="hidden fade-in space-y-6">
+            <!-- Kopfbereich Verwaltung -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900">Verwaltung & Live-App-Updates</h2>
+                        <p class="text-sm text-slate-500" id="adminRoleSubtitle">Angemeldet als Administrator</p>
+                    </div>
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 self-start">
+                        <i data-lucide="shield" class="w-3.5 h-3.5"></i>
+                        Geschützter Bereich
+                    </span>
+                </div>
+            </div>
+
+            <!-- 1. APP-UPDATE VERÖFFENTLICHEN (Für Admin UND Administrator) -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                        <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base sm:text-lg font-bold text-slate-900">App-Update & Live-Ankündigung ausspielen</h3>
+                        <p class="text-xs text-slate-500">Aktualisiert den App-Titel und zeigt sofort ein Update-Banner auf allen verbundenen Geräten an.</p>
+                    </div>
+                </div>
+
+                <form onsubmit="handlePublishAppUpdate(event)" class="space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">App-Titel (Header)</label>
+                            <input type="text" id="updateAppTitleInput" value="Schul- & Veranstaltungsplaner" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Versions-Nummer</label>
+                            <input type="text" id="updateVersionInput" placeholder="z. B. v2.1" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Update-Nachricht / Live-Hinweis für alle Nutzer</label>
+                        <input type="text" id="updateMessageInput" placeholder="z. B. Neue Technik-Checklisten wurden hinzugefügt!" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="updateBannerActiveInput" class="w-4 h-4 accent-blue-600 rounded">
+                            <span class="text-sm font-medium text-slate-700">Live-Update-Banner oben auf allen Geräten einblenden</span>
+                        </label>
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm px-5 py-2.5 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer">
+                            <i data-lucide="send" class="w-4 h-4"></i>
+                            Update live schalten
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- 2. PASSWORT- & ACCOUNT-ÜBERSICHT (Für Admin UND Administrator) -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
+                            <i data-lucide="key-round" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base sm:text-lg font-bold text-slate-900">Zugangsdaten & Passwort-Übersicht</h3>
+                            <p class="text-xs text-slate-500">Nur für Admin und Administrator einsehbar.</p>
+                        </div>
+                    </div>
+                    <button type="button" onclick="togglePasswordsVisibility()" id="togglePwdVisBtn" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer self-start">
+                        <i data-lucide="eye" class="w-4 h-4"></i>
+                        <span>Passwörter anzeigen</span>
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <!-- Admin -->
+                    <div class="p-4 rounded-xl border border-amber-200 bg-amber-50/40">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-bold uppercase tracking-wider text-amber-800">Admin</span>
+                            <button type="button" id="copyAdminPwdBtn" onclick="copyCredential('Feld_Bahn')" class="text-slate-400 hover:text-slate-700 cursor-pointer" title="Passwort kopieren">
+                                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                        <div id="adminPwdSecretField" class="font-mono text-sm font-bold text-slate-900 pwd-secret" data-secret="Feld_Bahn">•••••••••</div>
+                        <p id="adminPwdSubtext" class="text-[11px] text-slate-500 mt-1">Vollzugriff & Impressum</p>
+                    </div>
+
+                    <!-- Administrator -->
+                    <div class="p-4 rounded-xl border border-purple-200 bg-purple-50/40">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-bold uppercase tracking-wider text-purple-800">Administrator</span>
+                            <button type="button" onclick="copyCredential('sonuslux')" class="text-slate-400 hover:text-slate-700 cursor-pointer" title="Passwort kopieren">
+                                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                        <div class="font-mono text-sm font-bold text-slate-900 pwd-secret" data-secret="sonuslux">••••••••</div>
+                        <p class="text-[11px] text-slate-500 mt-1">Löschen, Dokumente & Updates</p>
+                    </div>
+
+                    <!-- Technik AG -->
+                    <div class="p-4 rounded-xl border border-blue-200 bg-blue-50/40">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-bold uppercase tracking-wider text-blue-800">Technik AG</span>
+                            <button type="button" onclick="copyCredential('flatdesign')" class="text-slate-400 hover:text-slate-700 cursor-pointer" title="Passwort kopieren">
+                                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                        <div class="font-mono text-sm font-bold text-slate-900 pwd-secret" data-secret="flatdesign">••••••••••</div>
+                        <p class="text-[11px] text-slate-500 mt-1">Dokumente & Termine</p>
+                    </div>
+
+                    <!-- Lehrer -->
+                    <div class="p-4 rounded-xl border border-emerald-200 bg-emerald-50/40">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-bold uppercase tracking-wider text-emerald-800">Lehrer</span>
+                            <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">Frei</span>
+                        </div>
+                        <div class="text-sm font-bold text-emerald-800">Kein Passwort</div>
+                        <p class="text-[11px] text-slate-500 mt-1">Standard-Account (Lesen & Termine)</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. IMPRESSUM-VERWALTUNG (NUR FÜR HAUPT-ADMIN 'Admin') -->
+            <div id="adminOnlyImprintPanel" class="hidden bg-white rounded-2xl border-2 border-amber-200 shadow-sm p-5 sm:p-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                            <i data-lucide="scale" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base sm:text-lg font-bold text-slate-900">Impressum-Verwaltung (Haupt-Admin)</h3>
+                            <p class="text-xs text-slate-500">Exklusiv für die Rolle „Admin“ bearbeitbar und auf allen Geräten synchronisiert.</p>
+                        </div>
+                    </div>
+                    <span class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 self-start">Nur Admin</span>
+                </div>
+
+                <form onsubmit="handleSaveImprint(event)" class="space-y-3.5">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Verantwortliche Stelle / Schule</label>
+                            <input type="text" id="impOrgInput" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Vertretungsberechtigte Person / Leitung</label>
+                            <input type="text" id="impRepInput" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 outline-none">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Anschrift (Straße, PLZ, Ort)</label>
+                            <input type="text" id="impAddrInput" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Kontakt (E-Mail & Telefon)</label>
+                            <input type="text" id="impContactInput" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 outline-none">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Zusätzliche rechtliche Hinweise / Datenschutz</label>
+                        <textarea id="impNotesInput" rows="3" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-amber-500 outline-none"></textarea>
+                    </div>
+                    <div class="flex justify-end pt-1">
+                        <button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-sm px-5 py-2.5 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer">
+                            <i data-lucide="check-circle" class="w-4 h-4"></i>
+                            Impressum speichern & synchronisieren
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- 4. KOSTENLOSES BACKEND & CLOUD-SYNC EINRICHTUNG -->
+            <div class="bg-white rounded-2xl border border-indigo-200 shadow-sm p-5 sm:p-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                            <i data-lucide="cloud" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base sm:text-lg font-bold text-slate-900">Kostenloses Backend & Geräte-Synchronisation</h3>
+                            <p class="text-xs text-slate-500">Da GitHub Pages statisch ist, verbindet ein kostenloser Firebase Realtime Database URL-Endpunkt alle Geräte dauerhaft.</p>
+                        </div>
+                    </div>
+                    <span id="cloudBackendBadge" class="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 self-start">Cloud-Sync aktiv (Firebase)</span>
+                </div>
+
+                <div class="bg-indigo-50/70 border border-indigo-100 rounded-xl p-4 mb-4 text-xs text-slate-700 space-y-1.5">
+                    <p class="font-bold text-indigo-900">So funktioniert das kostenlose Backend auf GitHub Pages:</p>
+                    <p>1. Projekt im Spark-Plan auf <strong>console.firebase.google.com</strong> anlegen (dauerhaft kostenlos).</p>
+                    <p>2. <strong>Realtime Database</strong> erstellen und die Regeln auf Lese-/Schreibzugriff setzen (siehe JSON unten).</p>
+                    <p>3. Database-URL prüfen oder anpassen und auf <strong>Cloud-Sync speichern</strong> klicken.</p>
+                </div>
+
+                <form onsubmit="handleSaveCloudConfig(event)" class="space-y-3.5">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Firebase Realtime Database Basis-URL (kostenlos)</label>
+                            <input type="url" id="cloudDbUrlInput" placeholder="https://schulplaner-sync-default-rtdb.europe-west1.firebasedatabase.app" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Raum- / Schul-Schlüssel</label>
+                            <input type="text" id="cloudRoomKeyInput" value="schulplaner_v1" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                        <button type="button" onclick="resetCloudConfig()" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer">
+                            Auf lokalen Modus zurücksetzen
+                        </button>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" onclick="copyFirebaseRules()" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 bg-slate-50 hover:bg-slate-100 text-xs font-semibold cursor-pointer">
+                                Firebase-Regeln kopieren
+                            </button>
+                            <button type="button" onclick="testCloudConnection()" class="px-4 py-2 rounded-xl border border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 text-xs font-semibold cursor-pointer">
+                                Verbindung testen
+                            </button>
+                            <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow-xs cursor-pointer">
+                                Cloud-Sync speichern
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="mt-4 pt-4 border-t border-slate-100">
+                    <div class="text-xs font-semibold text-slate-700 mb-1.5">Empfohlene Firebase Realtime Database Regeln (JSON):</div>
+                    <pre id="firebaseRulesCode" class="bg-slate-900 text-slate-100 text-xs p-3 rounded-xl overflow-x-auto">{
+  "rules": {
+    "schulplaner_v1": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}</pre>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- FOOTER MIT IMPRESSUM-BUTTON -->
+    <footer class="bg-white border-t border-slate-200 mt-auto">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+            <div>
+                <span id="footerBrandText" class="font-semibold text-slate-700">Schul- & Veranstaltungsplaner</span> · Kostenlos & Synchronisiert
+            </div>
+            <div class="flex items-center gap-4">
+                <button type="button" onclick="openImprintModal()" class="text-slate-600 hover:text-blue-600 font-medium underline cursor-pointer">
+                    Impressum
+                </button>
+                <button type="button" onclick="openLoginModal()" class="text-slate-600 hover:text-blue-600 font-medium cursor-pointer">
+                    Rolle wechseln
+                </button>
+            </div>
+        </div>
+    </footer>
+
+    <!-- ========================================================= -->
+    <!-- MODAL 1: ANMELDEN (ROLLEN-LOGIN)                          -->
+    <!-- ========================================================= -->
+    <div id="loginModal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 fade-in">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+                        <i data-lucide="key-round" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-900">Rolle & Zugang wählen</h3>
+                        <p class="text-xs text-slate-500">Wähle deinen Account für entsprechende Rechte.</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeLoginModal()" class="text-slate-400 hover:text-slate-700 p-1 rounded-lg cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <form onsubmit="handleLoginSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Rolle</label>
+                    <select id="loginRoleSelect" onchange="onLoginRoleChange()" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                        <option value="Lehrer">Lehrer (ohne Passwort – Lesen & Termine)</option>
+                        <option value="Technik AG">Technik AG (Dokumente & Termine)</option>
+                        <option value="Administrator">Administrator (Löschen, Dokumente & Updates)</option>
+                        <option value="Admin">Admin (Vollzugriff & Impressum)</option>
+                    </select>
+                </div>
+
+                <div id="loginPasswordGroup" class="hidden">
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Passwort *</label>
+                    <input type="password" id="loginPasswordInput" placeholder="Passwort eingeben..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+
+                <p id="loginRoleHint" class="text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    Als <strong>Lehrer</strong> kannst du Veranstaltungen einsehen, neue Termine eintragen sowie Hinweise & Dokumente lesen.
+                </p>
+
+                <div class="flex justify-end gap-2 pt-1">
+                    <button type="button" onclick="closeLoginModal()" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-600 text-sm font-medium hover:bg-slate-50 cursor-pointer">Abbrechen</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-xs cursor-pointer">Anmelden</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- MODAL 2: IMPRESSUM-ANZEIGE                                -->
+    <!-- ========================================================= -->
+    <div id="imprintModal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-6 fade-in max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                        <i data-lucide="scale" class="w-5 h-5"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-900">Impressum</h3>
+                </div>
+                <button type="button" onclick="closeImprintModal()" class="text-slate-400 hover:text-slate-700 p-1 rounded-lg cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div id="imprintModalBody" class="space-y-3 text-sm text-slate-700">
+                <!-- Wird dynamisch mit gespeicherten Impressum-Daten befüllt -->
+            </div>
+
+            <div class="flex justify-end mt-6 pt-3 border-t border-slate-100">
+                <button type="button" onclick="closeImprintModal()" class="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold cursor-pointer">Schließen</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- JAVASCRIPT: LOGIK, ROLLEN, CLOUD-SYNC & UI                -->
+    <!-- ========================================================= -->
+    <script>
+        // ---------------------------------------------------------
+        // 1. KONSTANTEN & PASSWÖRTER (EXAKT BEIBEHALTEN)
+        // ---------------------------------------------------------
+        const ROLE_PASSWORDS = {
+            'Technik AG': 'flatdesign',
+            'Administrator': 'sonuslux',
+            'Admin': 'Feld_Bahn'
+        };
+
+        const STORAGE_KEY_DATA = 'schulplaner_shared_state_v1';
+        const STORAGE_KEY_ROLE = 'schulplaner_active_role_v1';
+        const STORAGE_KEY_CLOUD = 'schulplaner_cloud_config_v1';
+        const STORAGE_KEY_DISMISSED_BANNER = 'schulplaner_dismissed_banner_v1';
+        const BROADCAST_CHANNEL_NAME = 'schulplaner_sync_channel_v1';
+
+        // Direkte Firebase-Konfiguration für "schulplaner-sync"
+        // Falls deine Datenbank in Europa (europe-west1) liegt:
+        // databaseURL: 'https://schulplaner-sync-default-rtdb.europe-west1.firebasedatabase.app'
+        // US-Fallback (falls in den USA erstellt):
+        // databaseURL: 'https://schulplaner-sync-default-rtdb.firebaseio.app'
+        const FIREBASE_CONFIG = {
+            enabled: true,
+            databaseURL: 'https://schulplaner-sync-default-rtdb.europe-west1.firebasedatabase.app',
+            rootPath: 'schulplaner_v1'
+        };
+
+        // Standard-Ausgangsdaten
+        function getDefaultState() {
+            return {
+                appTitle: 'Schul- & Veranstaltungsplaner',
+                updateBanner: {
+                    active: false,
+                    version: 'v1.0',
+                    message: ''
+                },
+                events: [
+                    {
+                        id: 'ev-init-1',
+                        title: 'Sommerkonzert der Schulbands',
+                        date: '2026-06-18',
+                        time: '18:30',
+                        location: 'Aula',
+                        desc: '4 Gesangsmikrofone, Schlagzeug-Abnahme, Mischpult & Bühnenlicht.',
+                        createdBy: 'Technik AG'
+                    },
+                    {
+                        id: 'ev-init-2',
+                        title: 'Elternabend Jahrgangsstufe 7',
+                        date: '2026-06-24',
+                        time: '19:00',
+                        location: 'Raum B104',
+                        desc: 'Beamer & Präsentations-HDMI benötigt.',
+                        createdBy: 'Lehrer'
+                    }
+                ],
+                docs: [
+                    {
+                        id: 'doc-init-1',
+                        title: 'Tonanlage Aula – Schnellanleitung',
+                        category: 'Technik-Guide',
+                        content: '1. Hauptschalter im Technikschrank umlegen.\n2. Mischpult hochfahren und Master-Fader langsam auf 0 dB schieben.\n3. Funkmikrofone vorab auf Kanal 1–4 prüfen und bei Nichtgebrauch stummschalten.',
+                        author: 'Technik AG',
+                        updatedAt: '2026-05-01'
+                    },
+                    {
+                        id: 'doc-init-2',
+                        title: 'Checkliste vor Veranstaltungsbeginn',
+                        category: 'Checkliste',
+                        content: '• Flucht- und Rettungswege sind vollständig frei.\n• Kabelbrücken über Gehwegen verlegen.\n• Raumtemperatur und Lüftung prüfen.',
+                        author: 'Administrator',
+                        updatedAt: '2026-05-05'
+                    }
+                ],
+                subscribers: [],
+                lastNotificationLog: 'System initialisiert. Bereit für Synchronisation.',
+                imprint: {
+                    org: 'Musterschule – Schulzentrum',
+                    rep: 'Schulleitung / Veranstaltungsleitung',
+                    addr: 'Schulstraße 12, 60311 Frankfurt am Main',
+                    contact: 'verwaltung@musterschule-beispiel.de · Tel. 069 1234567',
+                    notes: 'Verantwortlich für den Inhalt dieser Schul- und Veranstaltungsplanung.'
+                },
+                updatedAt: Date.now()
+            };
+        }
+
+        // Globale Laufzeitvariablen
+        let appState = loadInitialState();
+        let currentRole = localStorage.getItem(STORAGE_KEY_ROLE) || 'Lehrer';
+        let cloudConfig = loadCloudConfig();
+        let passwordsVisible = false;
+        let broadcastChannel = null;
+        let cloudPollTimer = null;
+
+        // ---------------------------------------------------------
+        // 2. INITIALISIERUNG & SPEICHER-FUNKTIONEN
+        // ---------------------------------------------------------
+        function loadInitialState() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY_DATA);
+                if (!raw) {
+                    const def = getDefaultState();
+                    localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(def));
+                    return def;
+                }
+                const parsed = JSON.parse(raw);
+                return Object.assign(getDefaultState(), parsed);
+            } catch (err) {
+                console.error('Fehler beim Laden des lokalen Zustands:', err);
+                return getDefaultState();
+            }
+        }
+
+        function loadCloudConfig() {
+            const fallbackConfig = {
+                enabled: Boolean(FIREBASE_CONFIG.enabled && FIREBASE_CONFIG.databaseURL),
+                dbUrl: FIREBASE_CONFIG.databaseURL || '',
+                roomKey: FIREBASE_CONFIG.rootPath || 'schulplaner_v1'
+            };
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY_CLOUD);
+                if (!raw) {
+                    return fallbackConfig;
+                }
+                const parsed = JSON.parse(raw);
+                return Object.assign({}, fallbackConfig, parsed);
+            } catch (err) {
+                console.error('Fehler beim Laden der Cloud-Konfiguration:', err);
+                return fallbackConfig;
+            }
+        }
+
+        function saveState(options = { pushCloud: true, broadcast: true }) {
+            try {
+                appState.updatedAt = Date.now();
+                localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(appState));
+
+                if (options.broadcast && broadcastChannel) {
+                    broadcastChannel.postMessage({ type: 'STATE_UPDATE', payload: appState });
+                }
+
+                if (options.pushCloud && cloudConfig.enabled && cloudConfig.dbUrl) {
+                    pushStateToCloud();
+                }
+            } catch (err) {
+                console.error('Fehler beim Speichern:', err);
+                showToast('Fehler beim Speichern der Daten.', 'error');
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 3. KOSTENLOSES CLOUD-BACKEND (FIREBASE REALTIME REST)
+        // ---------------------------------------------------------
+        function getCloudEndpointUrl() {
+            if (!cloudConfig.dbUrl) return '';
+            const cleanBase = cloudConfig.dbUrl.trim().replace(/\/+$/, '');
+            const cleanRoom = (cloudConfig.roomKey || 'schulplaner_v1').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+            return `${cleanBase}/${cleanRoom}.json`;
+        }
+
+        async function pushStateToCloud() {
+            const url = getCloudEndpointUrl();
+            if (!url) return;
+            updateSyncIndicator('syncing', 'Synchronisiere...');
+            try {
+                const res = await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(appState)
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                updateSyncIndicator('online', 'Cloud-Sync aktiv (Firebase)');
+            } catch (err) {
+                console.warn('Cloud-Push fehlgeschlagen:', err);
+                updateSyncIndicator('error', 'Offline / Fehler');
+            }
+        }
+
+        async function pullStateFromCloud() {
+            const url = getCloudEndpointUrl();
+            if (!url) return;
+            try {
+                const res = await fetch(url, { cache: 'no-store' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const remoteData = await res.json();
+                if (remoteData && typeof remoteData === 'object') {
+                    const remoteTs = Number(remoteData.updatedAt || 0);
+                    const localTs = Number(appState.updatedAt || 0);
+                    if (remoteTs > localTs) {
+                        appState = Object.assign(getDefaultState(), remoteData);
+                        localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(appState));
+                        renderAll();
+                    }
+                    updateSyncIndicator('online', 'Cloud-Sync aktiv (Firebase)');
+                } else {
+                    await pushStateToCloud();
+                }
+            } catch (err) {
+                console.warn('Cloud-Pull fehlgeschlagen:', err);
+                updateSyncIndicator('error', 'Offline / Fehler');
+            }
+        }
+
+        async function forceCloudSyncNow() {
+            if (cloudConfig.enabled && cloudConfig.dbUrl) {
+                updateSyncIndicator('syncing', 'Synchronisiere...');
+                await pullStateFromCloud();
+                await pushStateToCloud();
+                showToast('Synchronisation mit Firebase abgeschlossen.', 'success');
+            } else {
+                if (broadcastChannel) {
+                    broadcastChannel.postMessage({ type: 'REQUEST_STATE' });
+                }
+                renderAll();
+                showToast('Lokaler & Tab-Abgleich aktualisiert.', 'info');
+            }
+        }
+
+        async function testCloudConnection() {
+            const urlInput = document.getElementById('cloudDbUrlInput').value.trim();
+            const roomInput = document.getElementById('cloudRoomKeyInput').value.trim() || 'schulplaner_v1';
+            if (!urlInput) {
+                showToast('Bitte zuerst eine Firebase Realtime Database URL eingeben.', 'error');
+                return;
+            }
+            const cleanBase = urlInput.replace(/\/+$/, '');
+            const cleanRoom = roomInput.replace(/[^a-zA-Z0-9_-]/g, '_');
+            const testUrl = `${cleanBase}/${cleanRoom}.json`;
+
+            updateSyncIndicator('syncing', 'Synchronisiere...');
+            try {
+                const res = await fetch(testUrl, { cache: 'no-store' });
+                if (!res.ok) throw new Error('Status ' + res.status);
+                updateSyncIndicator('online', 'Cloud-Sync aktiv (Firebase)');
+                showToast('Firebase-Verbindung erfolgreich getestet!', 'success');
+            } catch (err) {
+                updateSyncIndicator('error', 'Offline / Fehler');
+                showToast('Verbindung fehlgeschlagen. URL & Datenbank-Regeln prüfen.', 'error');
+            }
+        }
+
+        function copyFirebaseRules() {
+            const rulesEl = document.getElementById('firebaseRulesCode');
+            if (!rulesEl) return;
+            try {
+                const tempInput = document.createElement('textarea');
+                tempInput.value = rulesEl.textContent.trim();
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempInput);
+                showToast('Firebase-Regeln in die Zwischenablage kopiert.', 'success');
+            } catch (err) {
+                showToast('Kopieren fehlgeschlagen.', 'error');
+            }
+        }
+
+        function handleSaveCloudConfig(event) {
+            event.preventDefault();
+            const dbUrl = document.getElementById('cloudDbUrlInput').value.trim();
+            const roomKey = document.getElementById('cloudRoomKeyInput').value.trim() || 'schulplaner_v1';
+
+            if (!dbUrl) {
+                showToast('Bitte eine gültige Firebase URL eingeben oder auf lokalen Modus zurücksetzen.', 'error');
+                return;
+            }
+
+            cloudConfig = { enabled: true, dbUrl, roomKey };
+            localStorage.setItem(STORAGE_KEY_CLOUD, JSON.stringify(cloudConfig));
+            updateCloudBadge();
+            restartCloudPolling();
+            pushStateToCloud();
+            showToast('Firebase Cloud-Backend aktiviert und gespeichert.', 'success');
+        }
+
+        function resetCloudConfig() {
+            cloudConfig = { enabled: false, dbUrl: '', roomKey: FIREBASE_CONFIG.rootPath || 'schulplaner_v1' };
+            localStorage.setItem(STORAGE_KEY_CLOUD, JSON.stringify(cloudConfig));
+            document.getElementById('cloudDbUrlInput').value = '';
+            document.getElementById('cloudRoomKeyInput').value = cloudConfig.roomKey;
+            if (cloudPollTimer) {
+                clearInterval(cloudPollTimer);
+                cloudPollTimer = null;
+            }
+            updateCloudBadge();
+            updateSyncIndicator('local', 'Lokaler Modus (Firebase-URL eintragen)');
+            showToast('Auf lokalen Modus + Tab-Synchronisation zurückgesetzt.', 'info');
+        }
+
+        function restartCloudPolling() {
+            if (cloudPollTimer) clearInterval(cloudPollTimer);
+            if (cloudConfig.enabled && cloudConfig.dbUrl) {
+                pullStateFromCloud();
+                cloudPollTimer = setInterval(pullStateFromCloud, 6000);
+            }
+        }
+
+        function updateSyncIndicator(mode, text) {
+            const el = document.getElementById('syncIndicator');
+            if (!el) return;
+            if (mode === 'online') {
+                el.className = 'inline-flex items-center gap-1 text-emerald-600 font-medium';
+                el.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span>${escapeHtml(text)}`;
+            } else if (mode === 'syncing') {
+                el.className = 'inline-flex items-center gap-1 text-blue-600 font-medium';
+                el.innerHTML = `<span class="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>${escapeHtml(text)}`;
+            } else if (mode === 'error') {
+                el.className = 'inline-flex items-center gap-1 text-rose-600 font-medium';
+                el.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span>${escapeHtml(text)}`;
+            } else {
+                el.className = 'inline-flex items-center gap-1 text-amber-600 font-medium';
+                el.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500"></span>${escapeHtml(text)}`;
+            }
+        }
+
+        function updateCloudBadge() {
+            const badge = document.getElementById('cloudBackendBadge');
+            if (!badge) return;
+            if (cloudConfig.enabled && cloudConfig.dbUrl) {
+                badge.className = 'text-xs font-semibold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 self-start';
+                badge.textContent = 'Cloud-Sync aktiv (Firebase)';
+            } else {
+                badge.className = 'text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-700 self-start';
+                badge.textContent = 'Lokaler Modus (Firebase-URL eintragen)';
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 4. ROLLEN & BERECHTIGUNGEN
+        // ---------------------------------------------------------
+        function canCreateDocs() {
+            return currentRole === 'Technik AG' || currentRole === 'Administrator' || currentRole === 'Admin';
+        }
+
+        function canDeleteItems() {
+            return currentRole === 'Administrator' || currentRole === 'Admin';
+        }
+
+        function canAccessAdminTab() {
+            return currentRole === 'Administrator' || currentRole === 'Admin';
+        }
+
+        function isMainAdmin() {
+            return currentRole === 'Admin';
+        }
+
+        function openLoginModal() {
+            document.getElementById('loginRoleSelect').value = currentRole;
+            document.getElementById('loginPasswordInput').value = '';
+            onLoginRoleChange();
+            document.getElementById('loginModal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeLoginModal() {
+            document.getElementById('loginModal').classList.add('hidden');
+        }
+
+        function onLoginRoleChange() {
+            const role = document.getElementById('loginRoleSelect').value;
+            const pwdGroup = document.getElementById('loginPasswordGroup');
+            const hint = document.getElementById('loginRoleHint');
+
+            if (role === 'Lehrer') {
+                pwdGroup.classList.add('hidden');
+                hint.innerHTML = 'Als <strong>Lehrer</strong> kannst du Veranstaltungen einsehen, neue Termine eintragen sowie Hinweise & Dokumente lesen.';
+            } else if (role === 'Technik AG') {
+                pwdGroup.classList.remove('hidden');
+                hint.innerHTML = 'Als <strong>Technik AG</strong> kannst du zusätzlich Dokumente & Hinweise anlegen.';
+            } else if (role === 'Administrator') {
+                pwdGroup.classList.remove('hidden');
+                hint.innerHTML = 'Als <strong>Administrator</strong> kannst du Einträge löschen, Dokumente verwalten und App-Updates ausspielen.';
+            } else if (role === 'Admin') {
+                pwdGroup.classList.remove('hidden');
+                hint.innerHTML = 'Als <strong>Admin</strong> hast du Vollzugriff inklusive Impressum-Verwaltung.';
+            }
+        }
+
+        function handleLoginSubmit(event) {
+            event.preventDefault();
+            const role = document.getElementById('loginRoleSelect').value;
+            const enteredPwd = document.getElementById('loginPasswordInput').value;
+
+            if (role !== 'Lehrer') {
+                const expectedPwd = ROLE_PASSWORDS[role];
+                if (enteredPwd !== expectedPwd) {
+                    showToast('Falsches Passwort für die gewählte Rolle.', 'error');
+                    return;
+                }
+            }
+
+            currentRole = role;
+            localStorage.setItem(STORAGE_KEY_ROLE, currentRole);
+            closeLoginModal();
+            applyRolePermissions();
+            renderAll();
+            showToast(`Angemeldet als ${currentRole}.`, 'success');
+        }
+
+        function logoutUser() {
+            currentRole = 'Lehrer';
+            localStorage.setItem(STORAGE_KEY_ROLE, currentRole);
+            passwordsVisible = false;
+            switchTab('events');
+            applyRolePermissions();
+            renderAll();
+            showToast('Abgemeldet – jetzt aktiv als Lehrer.', 'info');
+        }
+
+        function applyRolePermissions() {
+            const badge = document.getElementById('roleBadge');
+            const badgeText = document.getElementById('roleBadgeText');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const adminTab = document.getElementById('tab-admin');
+            const addDocBtn = document.getElementById('toggleAddDocBtn');
+            const imprintPanel = document.getElementById('adminOnlyImprintPanel');
+            const adminSubtitle = document.getElementById('adminRoleSubtitle');
+            const subAdminList = document.getElementById('subscribersAdminList');
+
+            badgeText.textContent = currentRole;
+
+            badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border ';
+            if (currentRole === 'Admin') {
+                badge.className += 'bg-amber-100 text-amber-900 border-amber-300';
+            } else if (currentRole === 'Administrator') {
+                badge.className += 'bg-purple-100 text-purple-900 border-purple-200';
+            } else if (currentRole === 'Technik AG') {
+                badge.className += 'bg-blue-100 text-blue-900 border-blue-200';
+            } else {
+                badge.className += 'bg-emerald-100 text-emerald-800 border-emerald-200';
+            }
+
+            if (currentRole !== 'Lehrer') {
+                logoutBtn.classList.remove('hidden');
+            } else {
+                logoutBtn.classList.add('hidden');
+            }
+
+            if (canAccessAdminTab()) {
+                adminTab.classList.remove('hidden');
+                adminSubtitle.textContent = `Angemeldet als ${currentRole}`;
+                subAdminList.classList.remove('hidden');
+            } else {
+                adminTab.classList.add('hidden');
+                subAdminList.classList.add('hidden');
+                const activeAdminView = !document.getElementById('view-admin').classList.contains('hidden');
+                if (activeAdminView) {
+                    switchTab('events');
+                }
+            }
+
+            if (canCreateDocs()) {
+                addDocBtn.classList.remove('hidden');
+            } else {
+                addDocBtn.classList.add('hidden');
+                document.getElementById('addDocCard').classList.add('hidden');
+            }
+
+            if (isMainAdmin()) {
+                imprintPanel.classList.remove('hidden');
+            } else {
+                imprintPanel.classList.add('hidden');
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 5. NAVIGATION (TABS)
+        // ---------------------------------------------------------
+        function switchTab(tabName) {
+            if (tabName === 'admin' && !canAccessAdminTab()) {
+                showToast('Kein Zugriff auf den Verwaltungsbereich.', 'error');
+                return;
+            }
+
+            const views = ['events', 'docs', 'notifications', 'admin'];
+            views.forEach(v => {
+                const viewEl = document.getElementById(`view-${v}`);
+                const tabEl = document.getElementById(`tab-${v}`);
+                if (viewEl) viewEl.classList.toggle('hidden', v !== tabName);
+                if (tabEl) {
+                    if (v === tabName) {
+                        tabEl.className = 'tab-btn active px-4 py-3 text-sm font-semibold border-b-2 border-blue-600 text-blue-600 flex items-center gap-2 whitespace-nowrap cursor-pointer';
+                    } else {
+                        tabEl.className = 'tab-btn px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-slate-900 flex items-center gap-2 whitespace-nowrap cursor-pointer';
+                    }
+                }
+            });
+            lucide.createIcons();
+        }
+
+        // ---------------------------------------------------------
+        // 6. VERANSTALTUNGEN (CRUD)
+        // ---------------------------------------------------------
+        function handleCreateEvent(event) {
+            event.preventDefault();
+            const title = document.getElementById('evTitle').value.trim();
+            const date = document.getElementById('evDate').value;
+            const time = document.getElementById('evTime').value;
+            const location = document.getElementById('evLocation').value.trim() || 'Nicht angegeben';
+            const desc = document.getElementById('evDesc').value.trim() || 'Keine zusätzlichen Angaben.';
+
+            if (!title || !date || !time) {
+                showToast('Bitte Titel, Datum und Uhrzeit ausfüllen.', 'error');
+                return;
+            }
+
+            const newEvent = {
+                id: 'ev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+                title,
+                date,
+                time,
+                location,
+                desc,
+                createdBy: currentRole
+            };
+
+            appState.events.unshift(newEvent);
+            appState.lastNotificationLog = `Neue Veranstaltung „${title}“ am ${formatDateDe(date)} um ${time} Uhr (${currentRole}).`;
+            saveState();
+            document.getElementById('eventForm').reset();
+            renderEvents();
+            renderNotificationsPanel();
+            showToast('Veranstaltung eingetragen & synchronisiert.', 'success');
+        }
+
+        function handleDeleteEvent(eventId) {
+            if (!canDeleteItems()) {
+                showToast('Nur Administrator und Admin dürfen Einträge löschen.', 'error');
+                return;
+            }
+            const beforeLen = appState.events.length;
+            appState.events = appState.events.filter(e => e.id !== eventId);
+            if (appState.events.length < beforeLen) {
+                appState.lastNotificationLog = `Veranstaltung gelöscht durch ${currentRole}.`;
+                saveState();
+                renderEvents();
+                renderNotificationsPanel();
+                showToast('Veranstaltung gelöscht.', 'info');
+            }
+        }
+
+        function renderEvents() {
+            const container = document.getElementById('eventsListContainer');
+            const query = (document.getElementById('eventSearchInput')?.value || '').toLowerCase().trim();
+
+            const filtered = appState.events
+                .slice()
+                .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
+                .filter(ev => {
+                    if (!query) return true;
+                    return (
+                        ev.title.toLowerCase().includes(query) ||
+                        ev.location.toLowerCase().includes(query) ||
+                        ev.desc.toLowerCase().includes(query) ||
+                        ev.date.includes(query)
+                    );
+                });
+
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-10 px-4 rounded-xl border border-dashed border-slate-200 text-slate-500 text-sm">
+                        Keine passenden Veranstaltungen gefunden.
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = filtered.map(ev => `
+                <div class="p-4 rounded-xl border border-slate-200 hover:border-blue-300 bg-slate-50/50 hover:bg-white transition flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="space-y-1">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-blue-100 text-blue-800">
+                                <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+                                ${formatDateDe(ev.date)} · ${escapeHtml(ev.time)} Uhr
+                            </span>
+                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-semibold bg-slate-200/70 text-slate-700">
+                                <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                                ${escapeHtml(ev.location)}
+                            </span>
+                            <span class="text-[11px] text-slate-400">von ${escapeHtml(ev.createdBy || 'Lehrer')}</span>
+                        </div>
+                        <h3 class="text-base font-bold text-slate-900 pt-0.5">${escapeHtml(ev.title)}</h3>
+                        <p class="text-sm text-slate-600">${escapeHtml(ev.desc)}</p>
+                    </div>
+                    ${canDeleteItems() ? `
+                        <button type="button" onclick="handleDeleteEvent('${ev.id}')" class="self-start sm:self-center px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            Löschen
+                        </button>
+                    ` : ''}
+                </div>
+            `).join('');
+
+            lucide.createIcons();
+        }
+
+        // ---------------------------------------------------------
+        // 7. HINWEISE & DOKUMENTE (CRUD)
+        // ---------------------------------------------------------
+        function toggleDocForm() {
+            if (!canCreateDocs()) {
+                showToast('Nur Technik AG, Administrator und Admin können Dokumente anlegen.', 'error');
+                return;
+            }
+            document.getElementById('addDocCard').classList.toggle('hidden');
+        }
+
+        function handleCreateDoc(event) {
+            event.preventDefault();
+            if (!canCreateDocs()) {
+                showToast('Keine Berechtigung zum Erstellen von Dokumenten.', 'error');
+                return;
+            }
+
+            const title = document.getElementById('docTitle').value.trim();
+            const category = document.getElementById('docCategory').value;
+            const content = document.getElementById('docContent').value.trim();
+
+            if (!title || !content) {
+                showToast('Bitte Titel und Inhalt angeben.', 'error');
+                return;
+            }
+
+            const newDoc = {
+                id: 'doc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+                title,
+                category,
+                content,
+                author: currentRole,
+                updatedAt: new Date().toISOString().slice(0, 10)
+            };
+
+            appState.docs.unshift(newDoc);
+            appState.lastNotificationLog = `Neues Dokument „${title}“ (${category}) von ${currentRole}.`;
+            saveState();
+            event.target.reset();
+            document.getElementById('addDocCard').classList.add('hidden');
+            renderDocs();
+            renderNotificationsPanel();
+            showToast('Dokument gespeichert & synchronisiert.', 'success');
+        }
+
+        function handleDeleteDoc(docId) {
+            if (!canDeleteItems()) {
+                showToast('Nur Administrator und Admin dürfen Dokumente löschen.', 'error');
+                return;
+            }
+            const beforeLen = appState.docs.length;
+            appState.docs = appState.docs.filter(d => d.id !== docId);
+            if (appState.docs.length < beforeLen) {
+                appState.lastNotificationLog = `Dokument gelöscht durch ${currentRole}.`;
+                saveState();
+                renderDocs();
+                renderNotificationsPanel();
+                showToast('Dokument gelöscht.', 'info');
+            }
+        }
+
+        function renderDocs() {
+            const container = document.getElementById('docsListContainer');
+            if (!appState.docs || appState.docs.length === 0) {
+                container.innerHTML = `
+                    <div class="md:col-span-2 text-center py-10 px-4 rounded-xl border border-dashed border-slate-200 text-slate-500 text-sm">
+                        Noch keine Hinweise oder Dokumente hinterlegt.
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = appState.docs.map(doc => `
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 flex flex-col justify-between gap-4">
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                ${escapeHtml(doc.category)}
+                            </span>
+                            <span class="text-[11px] text-slate-400">${escapeHtml(doc.updatedAt || '')}</span>
+                        </div>
+                        <h3 class="text-base font-bold text-slate-900">${escapeHtml(doc.title)}</h3>
+                        <p class="text-sm text-slate-600 whitespace-pre-line leading-relaxed">${escapeHtml(doc.content)}</p>
+                    </div>
+                    <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                        <span>Erstellt von: <strong>${escapeHtml(doc.author)}</strong></span>
+                        ${canDeleteItems() ? `
+                            <button type="button" onclick="handleDeleteDoc('${doc.id}')" class="text-rose-600 hover:text-rose-800 font-semibold flex items-center gap-1 cursor-pointer">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                Löschen
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+
+            lucide.createIcons();
+        }
+
+        // ---------------------------------------------------------
+        // 8. E-MAIL-BENACHRICHTIGUNGEN
+        // ---------------------------------------------------------
+        function handleSaveEmailSub(event) {
+            event.preventDefault();
+            const name = document.getElementById('subName').value.trim();
+            const email = document.getElementById('subEmail').value.trim().toLowerCase();
+            const optEvents = document.getElementById('subOptEvents').checked;
+            const optDocs = document.getElementById('subOptDocs').checked;
+            const optUpdates = document.getElementById('subOptUpdates').checked;
+            const active = document.getElementById('subActiveToggle').checked;
+
+            if (!email) {
+                showToast('Bitte eine gültige E-Mail-Adresse eingeben.', 'error');
+                return;
+            }
+
+            const idx = appState.subscribers.findIndex(s => s.email === email);
+            const entry = {
+                name: name || 'Abonnent',
+                email,
+                optEvents,
+                optDocs,
+                optUpdates,
+                active,
+                updatedAt: new Date().toLocaleDateString('de-DE')
+            };
+
+            if (idx >= 0) {
+                appState.subscribers[idx] = entry;
+            } else {
+                appState.subscribers.push(entry);
+            }
+
+            appState.lastNotificationLog = `E-Mail-Einstellungen für ${email} (${active ? 'aktiv' : 'deaktiviert'}) gespeichert.`;
+            saveState();
+            renderNotificationsPanel();
+            showToast('Benachrichtigungseinstellungen gespeichert.', 'success');
+        }
+
+        function handleDeleteSubscriber(email) {
+            if (!canAccessAdminTab()) {
+                showToast('Keine Berechtigung zum Entfernen von Abonnenten.', 'error');
+                return;
+            }
+            appState.subscribers = (appState.subscribers || []).filter(s => s.email !== email);
+            appState.lastNotificationLog = `Abonnent ${email} entfernt durch ${currentRole}.`;
+            saveState();
+            renderNotificationsPanel();
+            showToast('Abonnent entfernt.', 'info');
+        }
+
+        function renderNotificationsPanel() {
+            const activeCount = (appState.subscribers || []).filter(s => s.active).length;
+            const countEl = document.getElementById('activeSubscribersCount');
+            const logEl = document.getElementById('lastNotificationLog');
+            const adminListEl = document.getElementById('subscribersAdminList');
+
+            if (countEl) countEl.textContent = String(activeCount);
+            if (logEl) logEl.textContent = appState.lastNotificationLog || 'Bereit.';
+
+            if (adminListEl && canAccessAdminTab()) {
+                if (!appState.subscribers || appState.subscribers.length === 0) {
+                    adminListEl.innerHTML = '<p class="text-xs text-slate-400">Noch keine Abonnenten eingetragen.</p>';
+                } else {
+                    adminListEl.innerHTML = appState.subscribers.map(s => `
+                        <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs flex items-center justify-between gap-2">
+                            <div class="truncate">
+                                <div class="font-semibold text-slate-800 truncate">${escapeHtml(s.email)}</div>
+                                <div class="text-[11px] text-slate-500">${escapeHtml(s.name)}</div>
+                            </div>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${s.active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}">
+                                    ${s.active ? 'Aktiv' : 'Aus'}
+                                </span>
+                                <button type="button" onclick="handleDeleteSubscriber('${escapeHtml(s.email)}')" class="text-rose-500 hover:text-rose-700 p-0.5 cursor-pointer" title="Abonnent entfernen">
+                                    <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                    lucide.createIcons();
+                }
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 9. VERWALTUNG, LIVE-UPDATES, PASSWÖRTER & IMPRESSUM
+        // ---------------------------------------------------------
+        function getBannerSignature(banner) {
+            if (!banner || !banner.active || !banner.message) return '';
+            return `${banner.version || 'Update'}::${banner.message}`;
+        }
+
+        function handlePublishAppUpdate(event) {
+            event.preventDefault();
+            if (!canAccessAdminTab()) {
+                showToast('Keine Berechtigung für App-Updates.', 'error');
+                return;
+            }
+
+            const titleInput = document.getElementById('updateAppTitleInput').value.trim();
+            const versionInput = document.getElementById('updateVersionInput').value.trim() || 'Update';
+            const messageInput = document.getElementById('updateMessageInput').value.trim();
+            const bannerActive = document.getElementById('updateBannerActiveInput').checked;
+
+            if (titleInput) {
+                appState.appTitle = titleInput;
+            }
+            appState.updateBanner = {
+                active: bannerActive,
+                version: versionInput,
+                message: messageInput || `Neue Aktualisierung (${versionInput}) veröffentlicht.`
+            };
+            // Bei neuem Update Ausblend-Status zurücksetzen, damit alle das neue Banner sehen
+            localStorage.removeItem(STORAGE_KEY_DISMISSED_BANNER);
+            appState.lastNotificationLog = `App-Update (${versionInput}) von ${currentRole} veröffentlicht.`;
+            saveState();
+            renderHeaderAndBanner();
+            renderNotificationsPanel();
+            showToast('App-Update veröffentlicht & auf allen Geräten aktualisiert.', 'success');
+        }
+
+        function dismissUpdateBanner() {
+            const sig = getBannerSignature(appState.updateBanner);
+            if (sig) {
+                localStorage.setItem(STORAGE_KEY_DISMISSED_BANNER, sig);
+            }
+            document.getElementById('liveUpdateBanner').classList.add('hidden');
+        }
+
+        function renderHeaderAndBanner() {
+            const title = appState.appTitle || 'Schul- & Veranstaltungsplaner';
+            document.title = title;
+            document.getElementById('headerAppTitle').textContent = title;
+            document.getElementById('footerBrandText').textContent = title;
+            document.getElementById('updateAppTitleInput').value = title;
+
+            const banner = document.getElementById('liveUpdateBanner');
+            const badge = document.getElementById('bannerVersionBadge');
+            const msg = document.getElementById('bannerMessageText');
+            const currentSig = getBannerSignature(appState.updateBanner);
+            const dismissedSig = localStorage.getItem(STORAGE_KEY_DISMISSED_BANNER) || '';
+
+            if (currentSig && currentSig !== dismissedSig) {
+                badge.textContent = appState.updateBanner.version || 'Update';
+                msg.textContent = appState.updateBanner.message;
+                banner.classList.remove('hidden');
+            } else {
+                banner.classList.add('hidden');
+            }
+
+            document.getElementById('updateVersionInput').value = appState.updateBanner?.version || '';
+            document.getElementById('updateMessageInput').value = appState.updateBanner?.message || '';
+            document.getElementById('updateBannerActiveInput').checked = Boolean(appState.updateBanner?.active);
+        }
+
+        function togglePasswordsVisibility() {
+            if (!canAccessAdminTab()) return;
+            passwordsVisible = !passwordsVisible;
+            const fields = document.querySelectorAll('.pwd-secret');
+            fields.forEach(el => {
+                const secret = el.getAttribute('data-secret') || '';
+                if (passwordsVisible) {
+                    el.textContent = secret;
+                } else {
+                    el.textContent = '•'.repeat(Math.max(8, secret.length));
+                }
+            });
+
+            const btn = document.getElementById('togglePwdVisBtn');
+            btn.innerHTML = passwordsVisible
+                ? '<i data-lucide="eye-off" class="w-4 h-4"></i><span>Passwörter verbergen</span>'
+                : '<i data-lucide="eye" class="w-4 h-4"></i><span>Passwörter anzeigen</span>';
+            lucide.createIcons();
+        }
+
+        function copyCredential(secretValue) {
+            if (!canAccessAdminTab()) return;
+            try {
+                const tempInput = document.createElement('input');
+                tempInput.value = secretValue;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempInput);
+                showToast('Passwort in die Zwischenablage kopiert.', 'success');
+            } catch (err) {
+                showToast('Kopieren nicht möglich.', 'error');
+            }
+        }
+
+        function handleSaveImprint(event) {
+            event.preventDefault();
+            if (!isMainAdmin()) {
+                showToast('Nur der Haupt-Admin („Admin“) darf das Impressum bearbeiten.', 'error');
+                return;
+            }
+
+            appState.imprint = {
+                org: document.getElementById('impOrgInput').value.trim(),
+                rep: document.getElementById('impRepInput').value.trim(),
+                addr: document.getElementById('impAddrInput').value.trim(),
+                contact: document.getElementById('impContactInput').value.trim(),
+                notes: document.getElementById('impNotesInput').value.trim()
+            };
+            appState.lastNotificationLog = `Impressum aktualisiert durch Admin.`;
+            saveState();
+            renderImprintInputs();
+            renderNotificationsPanel();
+            showToast('Impressum gespeichert & synchronisiert.', 'success');
+        }
+
+        function renderImprintInputs() {
+            const imp = appState.imprint || getDefaultState().imprint;
+            document.getElementById('impOrgInput').value = imp.org || '';
+            document.getElementById('impRepInput').value = imp.rep || '';
+            document.getElementById('impAddrInput').value = imp.addr || '';
+            document.getElementById('impContactInput').value = imp.contact || '';
+            document.getElementById('impNotesInput').value = imp.notes || '';
+        }
+
+        function openImprintModal() {
+            const imp = appState.imprint || getDefaultState().imprint;
+            const body = document.getElementById('imprintModalBody');
+            body.innerHTML = `
+                <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                    <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Verantwortliche Stelle</div>
+                    <div class="font-semibold text-slate-900 mt-0.5">${escapeHtml(imp.org)}</div>
+                    <div class="text-slate-600 text-xs mt-1">Vertreten durch: ${escapeHtml(imp.rep)}</div>
+                </div>
+                <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                    <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Anschrift & Kontakt</div>
+                    <div class="text-slate-800 mt-0.5">${escapeHtml(imp.addr)}</div>
+                    <div class="text-slate-600 text-xs mt-1">${escapeHtml(imp.contact)}</div>
+                </div>
+                ${imp.notes ? `
+                    <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                        <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Hinweise</div>
+                        <div class="text-slate-700 whitespace-pre-line mt-0.5 text-xs">${escapeHtml(imp.notes)}</div>
+                    </div>
+                ` : ''}
+            `;
+            document.getElementById('imprintModal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeImprintModal() {
+            document.getElementById('imprintModal').classList.add('hidden');
+        }
+
+        // ---------------------------------------------------------
+        // 10. HILFSFUNKTIONEN & TOASTS
+        // ---------------------------------------------------------
+        function formatDateDe(isoDate) {
+            if (!isoDate) return '';
+            const parts = isoDate.split('-');
+            if (parts.length !== 3) return isoDate;
+            return `${parts[2]}.${parts[1]}.${parts[0]}`;
+        }
+
+        function escapeHtml(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            if (!container) return;
+
+            const toast = document.createElement('div');
+            let styles = 'bg-slate-900 text-white border-slate-800';
+            if (type === 'success') styles = 'bg-emerald-600 text-white border-emerald-700';
+            if (type === 'error') styles = 'bg-rose-600 text-white border-rose-700';
+            if (type === 'info') styles = 'bg-blue-600 text-white border-blue-700';
+
+            toast.className = `pointer-events-auto px-4 py-3 rounded-xl border shadow-lg text-xs sm:text-sm font-medium fade-in ${styles}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.25s ease';
+                setTimeout(() => toast.remove(), 260);
+            }, 3400);
+        }
+
+        function renderAll() {
+            renderHeaderAndBanner();
+            renderEvents();
+            renderDocs();
+            renderNotificationsPanel();
+            renderImprintInputs();
+            lucide.createIcons();
+        }
+
+        // ---------------------------------------------------------
+        // 11. STARTUP & LIVE-SYNCHRONISATION ÜBER TABS & CLOUD
+        // ---------------------------------------------------------
+        window.addEventListener('DOMContentLoaded', () => {
+            if ('BroadcastChannel' in window) {
+                broadcastChannel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+                broadcastChannel.onmessage = (event) => {
+                    if (event.data && event.data.type === 'STATE_UPDATE' && event.data.payload) {
+                        const incomingTs = Number(event.data.payload.updatedAt || 0);
+                        if (incomingTs > Number(appState.updatedAt || 0)) {
+                            appState = Object.assign(getDefaultState(), event.data.payload);
+                            localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(appState));
+                            renderAll();
+                        }
+                    } else if (event.data && event.data.type === 'REQUEST_STATE') {
+                        broadcastChannel.postMessage({ type: 'STATE_UPDATE', payload: appState });
+                    }
+                };
+            }
+
+            window.addEventListener('storage', (event) => {
+                if (event.key === STORAGE_KEY_DATA && event.newValue) {
+                    try {
+                        const parsed = JSON.parse(event.newValue);
+                        if (Number(parsed.updatedAt || 0) > Number(appState.updatedAt || 0)) {
+                            appState = Object.assign(getDefaultState(), parsed);
+                            renderAll();
+                        }
+                    } catch (err) {
+                        console.error(err);
+                    }
+                }
+            });
+
+            if (cloudConfig.dbUrl) {
+                document.getElementById('cloudDbUrlInput').value = cloudConfig.dbUrl;
+            }
+            document.getElementById('cloudRoomKeyInput').value = cloudConfig.roomKey || 'schulplaner_v1';
+            updateCloudBadge();
+
+            applyRolePermissions();
+            renderAll();
+
+            if (cloudConfig.enabled && cloudConfig.dbUrl) {
+                updateSyncIndicator('online', 'Cloud-Sync aktiv (Firebase)');
+                restartCloudPolling();
+            } else {
+                updateSyncIndicator('local', 'Lokaler Modus (Firebase-URL eintragen)');
+            }
+        });
+    </script>
+</body>
+</html>
